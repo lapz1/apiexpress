@@ -10,16 +10,26 @@ const app = express();
 
 //Variables
 let users = [];
+let tokens = [];
 
 //middlewares
-const logger1 = (req, res, next) => {
-	console.log("Entro en el Logger 1");
-	next();
-}
-
-const logger2 = (req, res, next) => {
-	console.log("Entro en Logger 2");
-	next();
+const auth = (req, res, next) => {
+	let token = req.header("token");
+	let sw = false;
+	for(let i = 0; i < tokens.length; i++){
+		if(token == tokens[i]){
+			sw = true;
+			break;
+		}
+	}
+	
+	if(sw){
+		next();
+	} else {
+		res
+		.status(500)
+		.send('Usuario no autorizado');	
+	}	
 }
 
 //Config
@@ -33,11 +43,11 @@ app.get('/', (req, res)=>{
 });
 
 //Ruta Users Get
-app.get('/users', logger1, logger2, (req, res)=>{
+app.get('/users', auth, (req, res)=>{
 	var ul = "<ul>"
 	for(var i=0; i<users.length; i++){
 		var obj = users[i];
-		ul += "<li>El id: " + obj.id + " pertenece al usuario " + obj.name + "</li>";
+		ul += "<li>El id: " + obj.id + " pertenece al usuario " + obj.username + "</li>";
 	}
 	ul += "</ul>";
 	
@@ -48,27 +58,58 @@ app.get('/users', logger1, logger2, (req, res)=>{
 
 //Ruta POST Users
 app.post('/users', (req, res)=>{
-    let persona = {
-		id: req.body.id,
-		name: req.body.name
+    let user = {
+		id: users.length,
+		username: req.body.username,
+		password: req.body.password
 	};
 	
-	users.push(persona);		
+	users.push(user);		
 	
     res
     .status(200)
-    .send('El usuario: ' + persona.name + ', fue creado con el id: ' + persona.id);
+    .send('El usuario: ' + user.username + ', fue creado con el id: ' + user.id);
+});
+
+//Ruta POST Users
+app.post('/users/login', (req, res)=>{
+	let user = {
+		username: req.body.username,
+		password: req.body.password
+	};
+	
+    let sw = false;
+	let token = 0;
+	for(var i=0; i<users.length; i++){
+		var obj = users[i];
+		if(user.username == obj.username && user.password == obj.password){
+			token = Math.floor(Math.random() * (999 - 100) + 100);
+			tokens.push(token);
+			sw = true;
+			break;
+		}	
+	}	
+	
+	if(sw){
+		res
+		.status(200)
+		.send('El usuario: ' + req.body.username + ', fue asignado con el token: ' + token);			
+	}else{
+		res
+		.status(500)
+		.send('El usuario: ' + req.body.username + ' no pudo iniciar sesión');	
+	}	
 });
 
 //Ruta PUT Users
 app.put('/users', (req, res)=>{
     let id = req.query.id;
-	let name = req.query.name;
+	let username = req.query.username;
 	let sw = false;
 	for(var i=0; i<users.length; i++){
 		var obj = users[i];
 		if(obj.id == id){
-			obj.name = name;
+			obj.username = username;
 			sw = true;
 			break;
 		}		
