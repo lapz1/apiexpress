@@ -2,6 +2,10 @@
 const express = require('express');
 const nocache = require('nocache')
 const bodyParser = require('body-parser');
+const fs = require('fs');
+const morgan = require('morgan');
+const jwt = require('jsonwebtoken');
+const bcrypt = require('bcrypt');
 
 const config = require('./config');
 
@@ -10,20 +14,31 @@ const app = express();
 
 //Variables
 let users = [];
-let tokens = [];
+let accessLogStream = fs.createWriteStream('./files/access.log', { flags: 'a' })
 
 //middlewares
+const logs  = (req, res, next) => {
+	let linea = req.path + "\r\n";
+	fs.appendFile('./files/logs.txt', linea, (err) => {
+		if(err){
+			res
+			.status(500)
+			.send("Error en escritura de Archivo");
+		}
+		next();
+	});
+}
+
 const auth = (req, res, next) => {
 	let token = req.header("token");
-	let sw = false;
-	for(let i = 0; i < tokens.length; i++){
-		if(token == tokens[i]){
-			sw = true;
-			break;
-		}
+	var decode;	
+	try{
+		decode = jwt.verify(token, config.tokenKey);
+	}catch(ex){
+		decode = false;
 	}
 	
-	if(sw){
+	if(!!decode){
 		next();
 	} else {
 		res
@@ -33,8 +48,21 @@ const auth = (req, res, next) => {
 }
 
 //Config
+app.use(logs);
 app.use(nocache())
 app.use(bodyParser.json())
+//Usar el middelware en todas las peticiones
+app.use(morgan('combined', { stream: accessLogStream }))
+
+//Funciones
+function cargarUsuarios(){
+	fs.readFile('./files/users.json','utf8', (err, data) => {
+		if(err){
+			console.log("Error en lectura de Archivo");
+		}
+		users = JSON.parse(data);
+	});
+}
 
 //Routes
 // Ruta Raiz
@@ -58,12 +86,15 @@ app.get('/users', auth, (req, res)=>{
 
 //Ruta POST Users
 app.post('/users', (req, res)=>{
-    let user = {
-		id: users.length,
-		username: req.body.username,
-		password: req.body.password
-	};
+	const plainPassword = req.body.password;
+	const salt = bcrypt.genSaltSync(config.saltRounds);
+	const hash = bcrypt.hashSync(plainPassword, salt);
 	
+    let user = {
+		id: req.body.id,
+		username: req.body.username,
+		password: hash
+	};
 	users.push(user);		
 	
     res
@@ -79,12 +110,11 @@ app.post('/users/login', (req, res)=>{
 	};
 	
     let sw = false;
-	let token = 0;
+	let token = '';
 	for(var i=0; i<users.length; i++){
 		var obj = users[i];
-		if(user.username == obj.username && user.password == obj.password){
-			token = Math.floor(Math.random() * (999 - 100) + 100);
-			tokens.push(token);
+		if(user.username == obj.username && bcrypt.compareSync(user.password, obj.password)){
+			token = jwt.sign({username: user.username}, config.tokenKey);
 			sw = true;
 			break;
 		}	
@@ -138,21 +168,8 @@ app.delete('/users', (req, res)=>{
     .send('El id: ' + id + (sw ? ', fue eliminado' : ', no fue encontrado'));
 });
 
-//Ruta Admin
-app.get('/admin', (req, res)=>{
-    res
-    .status(200)
-    .send('<h1>ADMIN DASHBOARD</h1>');
-});
-
-//Errores
-app.get('/admin1', (req, res)=>{
-    res
-    .status(500)
-    .send('<h1>ERROR</h1><h2>P&aacute;gina no disponible.</h2>');
-});
-
 //Server
 app.listen(config.port, ()=> {
     console.log('Servidor Iniciado');
+	cargarUsuarios();
 });
